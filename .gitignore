@@ -1,0 +1,29 @@
+# Build artifacts
+target/
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs
+*.log
+
+# Runtime artifacts
+script.ps1
+
+# Dev workspace
+agent/
+
+# Dev-only scripts
+code_mutation.ps1
+build_exe.bat
+run_app.bat
