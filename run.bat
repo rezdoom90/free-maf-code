@@ -17,7 +17,7 @@ if not defined BUILD_DIR (
     popd
 )
 if not defined BUILD_DIR (
-    echo [DeepSeek Agent Bridge] pom.xml not found near run.bat.
+    echo [Free MAF Code] pom.xml not found near run.bat.
     echo Checked: %RUN_DIR% and its parent.
     echo pom.xml not found>>"%LOG%"
     pause
@@ -45,7 +45,7 @@ echo JAR=%JAR%>>"%LOG%"
 
 rem Prerequisites.
 if not exist "%AGENT_DIR%\ensure-prerequisites.ps1" goto :legacy_prereq
-echo [DeepSeek Agent Bridge] Checking prerequisites...
+echo [Free MAF Code] Checking prerequisites...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AGENT_DIR%\ensure-prerequisites.ps1"
 if errorlevel 1 goto :prereq_failed
 goto :prereq_ok
@@ -53,20 +53,20 @@ goto :prereq_ok
 :legacy_prereq
 where java >nul 2>nul
 if errorlevel 1 (
-    echo [DeepSeek Agent Bridge] java not found in PATH.
+    echo [Free MAF Code] java not found in PATH.
     pause
     exit /b 1
 )
 where mvn >nul 2>nul
 if errorlevel 1 (
-    echo [DeepSeek Agent Bridge] Maven not found in PATH.
+    echo [Free MAF Code] Maven not found in PATH.
     pause
     exit /b 1
 )
 goto :prereq_ok
 
 :prereq_failed
-echo [DeepSeek Agent Bridge] Prerequisites are not satisfied.
+echo [Free MAF Code] Prerequisites are not satisfied.
 pause
 exit /b 1
 
@@ -74,29 +74,29 @@ exit /b 1
 
 rem Build if needed.
 if exist "%JAR%" goto :run
-echo [DeepSeek Agent Bridge] First run: building framework, this may take a few minutes...
+echo [Free MAF Code] First run: building framework, this may take a few minutes...
 pushd "%BUILD_DIR%"
 call mvn -q -DskipTests package
 set "MVN_RC=%ERRORLEVEL%"
 popd
 if not "%MVN_RC%"=="0" (
-    echo [DeepSeek Agent Bridge] Build failed with exit code %MVN_RC%.
+    echo [Free MAF Code] Build failed with exit code %MVN_RC%.
     pause
     exit /b 1
 )
 if not exist "%JAR%" (
-    echo [DeepSeek Agent Bridge] Build finished but %JAR% is missing.
+    echo [Free MAF Code] Build finished but %JAR% is missing.
     pause
     exit /b 1
 )
 
 :run
 cd /d "%PROJECT_ROOT%"
-echo [DeepSeek Agent Bridge] Starting...
+echo [Free MAF Code] Starting...
 java -jar "%JAR%"
 set "JAVA_RC=%ERRORLEVEL%"
 if not "%JAVA_RC%"=="0" (
-    echo [DeepSeek Agent Bridge] Application exited with code %JAVA_RC%.
+    echo [Free MAF Code] Application exited with code %JAVA_RC%.
     pause
 )
 exit /b %JAVA_RC%

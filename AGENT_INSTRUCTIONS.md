@@ -1,6 +1,6 @@
 # AGENT_INSTRUCTIONS.md
 
-Reference for the DeepSeek Web agent working with DeepSeek Agent Bridge.
+Reference for the DeepSeek Web agent working with Free MAF Code.
 This content is embedded in the system instruction added to the first prompt of each cycle.
 
 ## Language
