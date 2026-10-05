@@ -44,10 +44,11 @@ echo PROJECT_ROOT=%PROJECT_ROOT%>>"%LOG%"
 echo JAR=%JAR%>>"%LOG%"
 
 rem Prerequisites.
-if not exist "%AGENT_DIR%\ensure-prerequisites.ps1" goto :legacy_prereq
-echo [Free MAF Code] Checking prerequisites...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%AGENT_DIR%\ensure-prerequisites.ps1"
+if not exist "%RUN_DIR%\ensure-prerequisites.ps1" goto :legacy_prereq
+if exist "%TEMP%\freemaf-env.bat" del "%TEMP%\freemaf-env.bat" >nul 2>nul
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%RUN_DIR%\ensure-prerequisites.ps1"
 if errorlevel 1 goto :prereq_failed
+if exist "%TEMP%\freemaf-env.bat" call "%TEMP%\freemaf-env.bat"
 goto :prereq_ok
 
 :legacy_prereq
@@ -72,9 +73,14 @@ exit /b 1
 
 :prereq_ok
 
-rem Build if needed.
-if exist "%JAR%" goto :run
-echo [Free MAF Code] First run: building framework, this may take a few minutes...
+rem Verify existing JAR contains the main class; otherwise rebuild.
+if not exist "%JAR%" goto :do_build
+powershell.exe -NoProfile -Command "try { Add-Type -AssemblyName System.IO.Compression.FileSystem | Out-Null; $z=[System.IO.Compression.ZipFile]::OpenRead('%JAR%'); $ok=$z.Entries | Where-Object { $_.FullName -eq 'com/freemaf/agent/Main.class' }; $z.Dispose(); if ($ok) { exit 0 } else { exit 1 } } catch { exit 1 }"
+if not errorlevel 1 goto :run
+echo [Free MAF Code] Existing JAR is stale or invalid; rebuilding...
+
+:do_build
+echo [Free MAF Code] Building framework, this may take a few minutes...
 pushd "%BUILD_DIR%"
 call mvn -q -DskipTests package
 set "MVN_RC=%ERRORLEVEL%"

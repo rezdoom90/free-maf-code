@@ -27,3 +27,7 @@ agent/
 code_mutation.ps1
 build_exe.bat
 run_app.bat
+
+# Build outputs (defensive)
+*.jar
+*.class
