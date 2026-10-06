@@ -319,7 +319,48 @@ public final class AutomationLoop implements Runnable {
         }
     }
 
-    private void persistExecutorState() {
+
+    long touchExecutorCounterIfActive() {
+        long current = config.getExecutorMessageCount();
+        if (activeReviewerRole != null) return current;
+        long next = current + 1;
+        config.setExecutorMessageCount(next);
+        return next;
+    }
+
+    String injectMigrationWarningIfNeeded(String prompt) {
+        if (activeReviewerRole != null) return prompt;
+        if (awaitingMigrationConfirm) return prompt;
+        if (config.getExecutorMessageCount() < 100) return prompt;
+        String warn = "Счётчик сообщений Executor достиг 100. Пора начинать миграцию в новую сессию: подготовь WIP.md, отправь PS-скрипт с маркером AGENT_SESSION_MIGRATE_START, затем дождись лога и отправь только маркер AGENT_SESSION_MIGRATE_CONFIRM без скрипта.";
+        warningInjected = true;
+        debug("injected migration warning (counter=" + config.getExecutorMessageCount() + ")");
+        return warn + System.lineSeparator() + System.lineSeparator() + prompt;
+    }
+
+    boolean detectMigrationHalt(List<MarkerEvent> events, String responseRole) {
+        boolean isAgentStop = events.stream().anyMatch(ev -> ev.type() == MarkerType.AGENT_STOP);
+        return isAgentStop
+                && "EXECUTOR".equals(responseRole)
+                && config.getExecutorMessageCount() >= 100
+                && warningInjected;
+    }
+
+    void recognizeMigrationStart(List<MarkerEvent> events, String responseRole) {
+        boolean startEvent = events.stream().anyMatch(ev -> ev.type() == MarkerType.AGENT_SESSION_MIGRATE_START);
+        if (!startEvent) return;
+        if ("EXECUTOR".equals(responseRole)) {
+            awaitingMigrationConfirm = true;
+            debug("AGENT_SESSION_MIGRATE_START recognized, awaiting CONFIRM");
+        } else {
+            AppLogger.warn("AGENT_SESSION_MIGRATE_START from non-EXECUTOR role [" + responseRole + "], ignored");
+        }
+    }
+
+    boolean isAwaitingMigrationConfirm() { return awaitingMigrationConfirm; }
+
+    boolean isWarningInjected() { return warningInjected; }
+    private void persistExecutorState() {
 
         if (executorHwnd == null) return;
 
@@ -591,15 +632,7 @@ public final class AutomationLoop implements Runnable {
 
                         + ") length=" + prompt.length());
 
-
-
-                boolean targetIsExecutor = (activeReviewerRole == null);
-                if (targetIsExecutor && !awaitingMigrationConfirm && config.getExecutorMessageCount() >= 100) {
-                    String warn = "Счётчик сообщений Executor достиг 100. Пора начинать миграцию в новую сессию: подготовь WIP.md, отправь PS-скрипт с маркером AGENT_SESSION_MIGRATE_START, затем дождись лога и отправь только маркер AGENT_SESSION_MIGRATE_CONFIRM без скрипта.";
-                    prompt = warn + System.lineSeparator() + System.lineSeparator() + prompt;
-                    warningInjected = true;
-                    debug("injected migration warning (counter=" + config.getExecutorMessageCount() + ")");
-                }
+                prompt = injectMigrationWarningIfNeeded(prompt);
                 deepSeekSession.setAwaitingMigrationConfirm(awaitingMigrationConfirm);
                 AgentResponse response = deepSeekSession.getValidResponse(prompt, incomingFiles);
 
@@ -620,10 +653,8 @@ public final class AutomationLoop implements Runnable {
                     performSessionMigration(null);
                     continue;
                 }
-                boolean executorWasActive = (activeReviewerRole == null);
-                if (executorWasActive) {
-                    config.setExecutorMessageCount(config.getExecutorMessageCount() + 1);
-                }
+
+                touchExecutorCounterIfActive();
                 if (response.type() == AgentResponse.Type.USER_CHAT) {
 
                     chatConsole.appendAgent("[" + responseRole + "] " + response.content());
@@ -693,15 +724,8 @@ public final class AutomationLoop implements Runnable {
 
 
                 MarkerProcessResult mp = MarkerProcessor.process(events, chatConsole, statusMarker);
-                boolean startEvent = events.stream().anyMatch(ev -> ev.type() == MarkerType.AGENT_SESSION_MIGRATE_START);
-                if (startEvent) {
-                    if ("EXECUTOR".equals(responseRole)) {
-                        awaitingMigrationConfirm = true;
-                        debug("AGENT_SESSION_MIGRATE_START recognized, awaiting CONFIRM");
-                    } else {
-                        AppLogger.warn("AGENT_SESSION_MIGRATE_START from non-EXECUTOR role [" + responseRole + "], ignored");
-                    }
-                }
+
+                recognizeMigrationStart(events, responseRole);
 
 
 
@@ -740,11 +764,8 @@ public final class AutomationLoop implements Runnable {
 
 
                 if (mp == MarkerProcessResult.HALT) {
-                    boolean isAgentStop = events.stream().anyMatch(ev -> ev.type() == MarkerType.AGENT_STOP);
-                    boolean isMigrationHalt = isAgentStop
-                            && "EXECUTOR".equals(responseRole)
-                            && config.getExecutorMessageCount() >= 100
-                            && warningInjected;
+
+                    boolean isMigrationHalt = detectMigrationHalt(events, responseRole);
                     if (isMigrationHalt) {
                         debug("absorbing old AGENT_STOP, migrating at counter=" + config.getExecutorMessageCount());
                         warningInjected = false;
