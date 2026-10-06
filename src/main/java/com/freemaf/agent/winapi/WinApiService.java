@@ -61,7 +61,18 @@ public final class WinApiService {
 
     public static final int GMEM_MOVEABLE = 0x0002;
 
-    private WinApiService() {}
+    
+private WinApiService() {}
+
+    public static boolean isWindow(long hwndValue) {
+        if (hwndValue == 0L) return false;
+        return USER32.IsWindow(new Pointer(hwndValue));
+    }
+
+    public static void closeWindow(long hwndValue) {
+        if (hwndValue == 0L) return;
+        USER32.PostMessageW(new Pointer(hwndValue), WM_CLOSE, null, null);
+    }
 
     public interface WndEnumProc extends StdCallCallback {
 
@@ -192,3 +203,4 @@ public final class WinApiService {
     }
 
 }
+

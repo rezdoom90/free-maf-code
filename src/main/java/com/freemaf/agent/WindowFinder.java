@@ -10,6 +10,7 @@ import javax.swing.JOptionPane;
 import java.util.ArrayList;
 
 import java.util.List;
+import java.util.Optional;
 
 public final class WindowFinder {
 
@@ -65,7 +66,23 @@ public final class WindowFinder {
 
     }
 
-    public static WindowInfo choose(List<WindowInfo> matches) {
+
+    public static Optional<WindowInfo> findByHwnd(long hwndValue, String titleSubstring) {
+        if (hwndValue == 0L) return Optional.empty();
+        Pointer hwnd = new Pointer(hwndValue);
+        if (!WinApiService.USER32.IsWindow(hwnd)) return Optional.empty();
+        char[] buffer = new char[512];
+        int length = WinApiService.USER32.GetWindowTextW(hwnd, buffer, buffer.length);
+        String title = new String(buffer, 0, length);
+        if (titleSubstring != null && !titleSubstring.isEmpty()
+                && !title.toLowerCase().contains(titleSubstring.toLowerCase())) {
+            return Optional.empty();
+        }
+        WinApiService.RECT rect = new WinApiService.RECT();
+        if (!WinApiService.USER32.GetWindowRect(hwnd, rect)) return Optional.empty();
+        return Optional.of(WindowInfo.of(hwnd, title, rect));
+    }
+    public static WindowInfo choose(List<WindowInfo> matches) {
 
         if (matches.isEmpty()) {
 
@@ -112,3 +129,4 @@ public final class WindowFinder {
     }
 
 }
+

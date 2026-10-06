@@ -74,6 +74,7 @@ public final class MainFrame extends JFrame implements WindowRecoveryHandler {
     private javax.swing.JScrollPane attachmentsScroll;
 
     private javax.swing.JButton sendButton;
+    private javax.swing.JButton startButton;
 
     private final JLabel statusLabel = new JLabel("Stopped");
 
@@ -192,6 +193,7 @@ public final class MainFrame extends JFrame implements WindowRecoveryHandler {
         applyWhiteText(getContentPane());
 
         updateStatusIndicator();
+        updateStartButton();
 
         new Thread(hotkeyListener, "GlobalHotkey").start();
 
@@ -330,7 +332,7 @@ public final class MainFrame extends JFrame implements WindowRecoveryHandler {
         topRow.add(speedButton);
 
         topRow.add(Box.createHorizontalStrut(12));
-
+        startButton = new JButton("\u25B6");
         JButton startButton = new JButton("\u25B6");
 
         JButton stopButton = new JButton("Stop (Ctrl+Shift+S)");
@@ -340,7 +342,7 @@ public final class MainFrame extends JFrame implements WindowRecoveryHandler {
         JButton calibrationButton = new JButton("Calibrate");
 
         JButton clearChatButton = new JButton("Clear Chat");
-
+        startButton.setFont(new Font("Segoe UI Symbol", Font.PLAIN, 18));
         startButton.setFont(new Font("Dialog", Font.PLAIN, 14));
 
         topRow.add(startButton);
@@ -458,7 +460,7 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
         updateSendButtonState();
 
         rebuildAttachmentsList();
-
+        startButton.addActionListener(e -> handleStartButtonClick());
         startButton.addActionListener(e -> startAction());
 
         stopButton.addActionListener(e -> stopAction());
@@ -733,19 +735,39 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
         }
 
     }
-
     private void startAction() {
-
         EmergencyStop.reset();
-
         if (startSequenceRunning) { appendSystem("Start already running."); return; }
-
         startSequenceRunning = true;
-
         setStatus(StatusMarker.State.WORKING);
-
+        updateStartButton();
         new Thread(this::startSequence, "StartSequence").start();
+    }
 
+    private void handleStartButtonClick() {
+        if (currentLoop != null && currentLoop.isPaused()) {
+            appendSystem("Resuming session...");
+            currentLoop.resumeFromPause();
+            return;
+        }
+        if (currentLoop != null && currentState == StatusMarker.State.WORKING) {
+            appendSystem("Pausing...");
+            currentLoop.pause();
+            return;
+        }
+        if (startSequenceRunning) {
+            appendSystem("Start already running.");
+            return;
+        }
+        startAction();
+    }
+
+    private void updateStartButton() {
+        if (startButton == null) return;
+        boolean activeWork = currentState == StatusMarker.State.WORKING
+                || currentState == StatusMarker.State.PLANNING;
+        boolean userPaused = currentLoop != null && currentLoop.isPaused();
+        startButton.setText(activeWork && !userPaused ? "\u23F8" : "\u25B6");
     }
 
     private void calibrationAction() {
@@ -873,75 +895,62 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
         }
 
     }
-
     private void startSequence() {
-
         try {
-
-            WindowInfo window = ensureChromeWindow();
-
-            if (window == null) return;
-
-            windowManager.select(window);
-
-            if (!setupWorkRect()) return;
-
-            if (!config.isCalibrated()) {
-
-                appendSystem("Initial calibration (one-time).");
-
-                if (!runCalibrationSequence()) { setStatus(StatusMarker.State.STOPPED); return; }
-
-                config.setCalibrated(true);
-
-                config.save();
-
-                appendSystem("Calibration saved. It will not run on next launches.");
-
-            } else {
-
-                appendSystem("Calibration already done, skipping.");
-
-            }
-
-            appendSystem("Waiting for a user message in the input field below.");
-
             AutomationLoop loop = new AutomationLoop(chatConsole, psConsolePanel, statusMarkerProxy(), promptQueue,
-
                     deepSeekSession, powerShellExecutor, config, windowManager);
-
+            SessionDetector.SessionDecision decision = loop.bootstrapSession();
+            WindowInfo activeWindow = decision.activeWindow() != null
+                    ? decision.activeWindow()
+                    : (decision.executorWindow() != null ? decision.executorWindow() : decision.reviewerWindow());
+            if (activeWindow == null) {
+                appendSystem("Failed to determine active window.");
+                setStatus(StatusMarker.State.STOPPED);
+                return;
+            }
+            if (decision.decision() == SessionDetector.Decision.OPEN_NEW_CHAT
+                    || decision.decision() == SessionDetector.Decision.RECOVER_NEW_EXECUTOR) {
+                if (LoginChecker.isSignInPage(activeWindow, config)) {
+                    appendSystem("Sign-in page detected. Log in in the open Chrome window.");
+                    if (!showConfirmDialog("Log in in the open Chrome window, then click OK.", "Waiting for login")) {
+                        appendSystem("Login cancelled by user.");
+                        setStatus(StatusMarker.State.STOPPED);
+                        return;
+                    }
+                }
+            }
+            if (!setupWorkRect()) return;
+            boolean skipCalibration = decision.decision() == SessionDetector.Decision.RESUME_REVIEWER_SESSION;
+            if (!skipCalibration && !config.isCalibrated()) {
+                appendSystem("Initial calibration (one-time).");
+                if (!runCalibrationSequence()) { setStatus(StatusMarker.State.STOPPED); return; }
+                config.setCalibrated(true);
+                config.save();
+                appendSystem("Calibration saved. It will not run on next launches.");
+            } else if (skipCalibration) {
+                appendSystem("Reviewer session resumed, skipping calibration.");
+            } else {
+                appendSystem("Calibration already done, skipping.");
+            }
+            appendSystem("Waiting for a user message in the input field below.");
             this.currentLoop = loop;
-
+            updateStartButton();
             loop.run();
-
         } catch (InterruptedException e) {
-
             Thread.currentThread().interrupt();
-
             appendSystem("Cycle interrupted.");
-
             setStatus(StatusMarker.State.STOPPED);
-
         } catch (IOException e) {
-
             appendSystem("Error - " + e.getMessage());
-
             setStatus(StatusMarker.State.STOPPED);
-
         } catch (Exception e) {
-
             appendSystem("Error - " + e.getMessage());
-
             setStatus(StatusMarker.State.STOPPED);
-
         } finally {
-
             this.currentLoop = null;
-
             startSequenceRunning = false;
-
+            updateStartButton();
         }
-
     }
 
     private StatusMarker statusMarkerProxy() {
@@ -1142,6 +1151,7 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
 
             statusLabel.setText(state.name());
 
+                updateStartButton();
             updateStatusIndicator();
 
         });
@@ -1172,6 +1182,7 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
 
         setStatus(StatusMarker.State.STOPPED);
 
+        updateStartButton();
         chatConsole.appendSystem("Stopped by user");
 
     }
@@ -1217,3 +1228,5 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
     }
 
 }
+
+

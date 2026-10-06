@@ -163,6 +163,11 @@ public final class Config {
         DEFAULTS.put("watchdog.script.timeout.seconds", "1800");
         DEFAULTS.put("watchdog.script.check.interval.ms", "1000");
         DEFAULTS.put("watchdog.script.warn.threshold.seconds", "1200");
+        DEFAULTS.put("session.lastManagedHwnd", "0");
+        DEFAULTS.put("session.lastManagedTitle", "");
+        DEFAULTS.put("session.lastPhase", "EXECUTOR");
+        DEFAULTS.put("session.lastReviewerHwnd", "0");
+        DEFAULTS.put("session.lastReviewerTitle", "");
 
     }
 
@@ -325,7 +330,61 @@ public final class Config {
         return getLong("watchdog.script.check.interval.ms", 1000L);
     }
 
-    public long getScriptWarnThresholdSeconds() {
-        return getLong("watchdog.script.warn.threshold.seconds", 1200L);
-    }
-}
+        public long getScriptWarnThresholdSeconds() {
+        return getLong("watchdog.script.warn.threshold.seconds", 1200L);
+    }
+
+    public long getLastManagedHwnd() {
+        return getLong("session.lastManagedHwnd", 0L);
+    }
+
+    public String getLastManagedTitle() {
+        return get("session.lastManagedTitle", "");
+    }
+
+    public String getLastPhase() {
+        return get("session.lastPhase", "EXECUTOR");
+    }
+
+    public long getLastReviewerHwnd() {
+        return getLong("session.lastReviewerHwnd", 0L);
+    }
+
+    public String getLastReviewerTitle() {
+        return get("session.lastReviewerTitle", "");
+    }
+
+    public void setLastManagedHwnd(long hwnd) {
+        props.setProperty("session.lastManagedHwnd", String.valueOf(hwnd));
+        persist();
+    }
+
+    public void setLastManagedTitle(String title) {
+        props.setProperty("session.lastManagedTitle", title == null ? "" : title);
+        persist();
+    }
+
+    public void setLastPhase(String phase) {
+        props.setProperty("session.lastPhase", phase == null ? "EXECUTOR" : phase);
+        persist();
+    }
+
+    public void setLastReviewerHwnd(long hwnd) {
+        props.setProperty("session.lastReviewerHwnd", String.valueOf(hwnd));
+        persist();
+    }
+
+    public void setLastReviewerTitle(String title) {
+        props.setProperty("session.lastReviewerTitle", title == null ? "" : title);
+        persist();
+    }
+
+    public void persist() {
+        try {
+            save();
+        } catch (IOException e) {
+            AppLogger.warn("Config persist failed: " + e.getMessage());
+        }
+    }
+}
+
