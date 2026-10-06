@@ -1,0 +1,88 @@
+
+package com.freemaf.agent;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class MarkerParserTest {
+
+    @Test
+
+    void parsesUserMsg() {
+
+        List<MarkerEvent> events = MarkerParser.parse("USER_MSG: hello");
+
+        assertEquals(1, events.size());
+
+        assertEquals(MarkerType.USER_MSG, events.get(0).type());
+
+        assertEquals("hello", events.get(0).message());
+
+    }
+
+    @Test
+
+    void parsesRole() {
+
+        List<MarkerEvent> events = MarkerParser.parse("ROLE: EXECUTOR");
+
+        assertEquals(1, events.size());
+
+        assertEquals(MarkerType.ROLE, events.get(0).type());
+
+        assertEquals("EXECUTOR", events.get(0).message());
+
+    }
+
+    @Test
+
+    void parsesStop() {
+
+        List<MarkerEvent> events = MarkerParser.parse("AGENT_STOP: bye");
+
+        assertEquals(1, events.size());
+
+        assertEquals(MarkerType.AGENT_STOP, events.get(0).type());
+
+    }
+
+    @Test
+
+    void parsesDone() {
+
+        List<MarkerEvent> events = MarkerParser.parse("AGENT_DONE: done");
+
+        assertEquals(1, events.size());
+
+        assertEquals(MarkerType.AGENT_DONE, events.get(0).type());
+
+    }
+
+    @Test
+
+    void parsesPause() {
+
+        List<MarkerEvent> events = MarkerParser.parse("AGENT_PAUSE: waiting");
+
+        assertEquals(1, events.size());
+
+        assertEquals(MarkerType.AGENT_PAUSE, events.get(0).type());
+
+    }
+
+    @Test
+
+    void ignoresUnknownLines() {
+
+        List<MarkerEvent> events = MarkerParser.parse("just some text");
+
+        assertTrue(events.isEmpty());
+
+    }
+
+}

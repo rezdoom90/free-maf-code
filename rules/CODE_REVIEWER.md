@@ -76,4 +76,10 @@
   <require>Baseline and final content of the changed files (baseline = last commit).</require>
   <forbid>Guessing content - if something is missing, FAIL with a description of what is missing.</forbid>
 </directive>
+
+<directive id="SCRIPT_TIME_LIMIT">
+  <severity value="CRITICAL" />
+  <rule>При ревью кода/результата обязательная проверка: сгенерированные PS-скрипты укладываются в 30 минут.</rule>
+  <rule>Если хотя бы один скрипт превышает 30 минут — вердикт CODE_REJECTED.</rule>
+</directive>
 </role>

@@ -21,7 +21,7 @@ desktop.ini
 script.ps1
 
 # Dev workspace
-agent/
+/agent/
 
 # Dev-only scripts
 code_mutation.ps1

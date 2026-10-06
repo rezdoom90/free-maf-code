@@ -1,0 +1,54 @@
+
+package com.freemaf.agent;
+
+import com.sun.jna.Native;
+
+import com.sun.jna.win32.StdCallLibrary;
+
+import javax.swing.SwingUtilities;
+
+public final class Main {
+
+    private interface Shcore extends StdCallLibrary {
+
+        Shcore INSTANCE = Native.load("Shcore", Shcore.class);
+
+        int SetProcessDpiAwareness(int value);
+
+    }
+
+    private Main() {}
+
+    public static void main(String[] args) {
+
+        setDpiAwareness();
+
+        AppLogger.info("Application starting");
+
+        EmergencyStop.reset();
+
+        Config config = new Config();
+
+        DarkTheme.apply();
+
+        SwingUtilities.invokeLater(() -> new MainFrame(config).setVisible(true));
+
+    }
+
+    private static void setDpiAwareness() {
+
+        try {
+
+            Shcore.INSTANCE.SetProcessDpiAwareness(2);
+
+            AppLogger.info("DPI awareness set to PerMonitorV2");
+
+        } catch (Throwable t) {
+
+            AppLogger.warn("Failed to set DPI awareness: " + t.getMessage());
+
+        }
+
+    }
+
+}

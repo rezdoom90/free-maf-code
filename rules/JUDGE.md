@@ -87,4 +87,10 @@
 <directive id="DOCUMENTATION_UPDATE_CHECK">
   <rule>If the changes affect functionality, logic, narrative or interaction principles, verify the project documentation is updated.</rule>
 </directive>
+
+<directive id="SCRIPT_TIME_LIMIT">
+  <severity value="CRITICAL" />
+  <rule>При ревью плана обязательная проверка: ожидаемое время выполнения каждого PS-скрипта в плане — не более 30 минут.</rule>
+  <rule>Если хотя бы один скрипт превышает 30 минут — вердикт PLAN_REJECTED.</rule>
+</directive>
 </role>

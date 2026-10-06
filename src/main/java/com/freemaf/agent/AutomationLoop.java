@@ -1,0 +1,822 @@
+
+package com.freemaf.agent;
+
+import com.sun.jna.Pointer;
+
+import javax.swing.SwingUtilities;
+
+import java.io.IOException;
+
+import java.io.File;
+
+import java.nio.charset.StandardCharsets;
+
+import java.nio.file.Files;
+
+import java.nio.file.Path;
+
+import java.util.ArrayList;
+
+import java.util.List;
+
+public final class AutomationLoop implements Runnable {
+
+    private final ChatConsole chatConsole;
+
+    private final ConsolePanel psConsolePanel;
+
+    private final StatusMarker statusMarker;
+
+    private final PromptQueue promptQueue;
+
+    private final DeepSeekSession deepSeekSession;
+
+    private final PowerShellExecutor powerShellExecutor;
+
+    private final Config config;
+
+    private final WindowManager windowManager;
+
+    private final Pointer executorHwnd;
+
+    private volatile boolean executorContextRequired = true;
+
+    private Pointer reviewerHwnd;
+
+    private String activeReviewerRole = null;
+
+    private String pendingReviewerRole = null;
+
+    private final List<Pointer> excludes = new ArrayList<>();
+
+    public AutomationLoop(ChatConsole chatConsole, ConsolePanel psConsolePanel,
+
+                          StatusMarker statusMarker, PromptQueue promptQueue,
+
+                          DeepSeekSession deepSeekSession, PowerShellExecutor powerShellExecutor,
+
+                          Config config, WindowManager windowManager) {
+
+        this.chatConsole = chatConsole;
+
+        this.psConsolePanel = psConsolePanel;
+
+        this.statusMarker = statusMarker;
+
+        this.promptQueue = promptQueue;
+
+        this.deepSeekSession = deepSeekSession;
+
+        this.powerShellExecutor = powerShellExecutor;
+
+        this.config = config;
+
+        this.windowManager = windowManager;
+
+        this.executorHwnd = windowManager.hwnd();
+
+        if (executorHwnd != null) excludes.add(executorHwnd);
+
+    }
+
+    private void debug(String line) {
+
+        AppLogger.info(line);
+
+        if (config.getBoolean("debug.show_in_chat", true)) {
+
+            SwingUtilities.invokeLater(() -> chatConsole.appendDebug(line));
+
+        }
+
+    }
+
+    public void resetExecutorContext() {
+
+        this.executorContextRequired = true;
+
+        AppLogger.info("AutomationLoop: executorContextRequired reset to true");
+
+    }
+
+    private void deleteDeliveryScript() {
+
+        try {
+
+            boolean deleted = Files.deleteIfExists(Path.of("script.ps1"));
+
+            if (deleted) AppLogger.info("script.ps1 deleted after execution");
+
+        } catch (IOException e) {
+
+            AppLogger.warn("Failed to delete script.ps1: " + e.getMessage());
+
+        }
+
+    }
+
+    private void closeReviewerIfOpen() throws InterruptedException {
+
+        if (reviewerHwnd == null) return;
+
+        Pointer target = reviewerHwnd;
+
+        reviewerHwnd = null;
+
+        excludes.remove(target);
+
+        WindowInfo wi = new WindowInfo(target, "", 0, 0, 0, 0);
+
+        ChromeLauncher.closeWindow(wi);
+
+    }
+
+    private void switchToExecutor() throws InterruptedException {
+
+        closeReviewerIfOpen();
+
+        if (executorHwnd != null) {
+
+            windowManager.selectByHwnd(executorHwnd);
+
+            windowManager.activate();
+
+            Thread.sleep(200L);
+
+        }
+
+    }
+
+    private void openReviewerWindow() throws Exception {
+
+        closeReviewerIfOpen();
+
+        appendSystem("Opening new Chrome window for review role...");
+
+        WindowInfo win = deepSeekSession.openNewWindow(excludes);
+
+        reviewerHwnd = win.hwnd();
+
+        excludes.add(reviewerHwnd);
+
+        debug("opened reviewer window hwnd=" + Pointer.nativeValue(reviewerHwnd)
+
+                + " title=" + win.title());
+
+    }
+
+    @Override
+
+    public void run() {
+
+        debug("AutomationLoop started, executorHwnd="
+
+                + (executorHwnd == null ? "null" : Pointer.nativeValue(executorHwnd)));
+
+        while (!EmergencyStop.isStopped()) {
+
+            Prompt incoming;
+
+            try {
+
+                incoming = promptQueue.take();
+
+            } catch (InterruptedException e) {
+
+                Thread.currentThread().interrupt();
+
+                return;
+
+            }
+
+            String prompt = incoming.text();
+
+            List<File> incomingFiles = incoming.files();
+
+            try {
+
+                statusMarker.setState(StatusMarker.State.WORKING);
+
+                if (pendingReviewerRole != null) {
+
+                    openReviewerWindow();
+
+                    activeReviewerRole = pendingReviewerRole;
+
+                    pendingReviewerRole = null;
+
+                    prompt = SystemInstructionProvider.getExecutorRules()
+
+                            + System.lineSeparator() + System.lineSeparator() + prompt;
+
+                } else if (activeReviewerRole == null) {
+
+                    switchToExecutor();
+
+                }
+
+                if (incoming.userInitiated()) {
+
+                    StringBuilder wrapped = new StringBuilder();
+
+                    if (activeReviewerRole == null && executorContextRequired) {
+
+                        wrapped.append(SystemInstructionProvider.getExecutorRules());
+
+                        wrapped.append(System.lineSeparator()).append(System.lineSeparator())
+
+                                .append("### CONTEXT").append(System.lineSeparator());
+
+                        wrapped.append(new ContextPackager().buildContext());
+
+                        wrapped.append(System.lineSeparator()).append(System.lineSeparator());
+
+                        executorContextRequired = false;
+
+                    }
+
+                    wrapped.append(prompt);
+
+                    wrapped.append(System.lineSeparator()).append(System.lineSeparator())
+
+                            .append(SystemInstructionProvider.getFormatReminder());
+
+                    prompt = wrapped.toString();
+
+                    debug("wrapped user prompt (files=" + incoming.files().size() + ")");
+
+                }
+
+                debug("send prompt (executorHwnd="
+
+                        + (executorHwnd == null ? "null" : Pointer.nativeValue(executorHwnd))
+
+                        + ", reviewerHwnd="
+
+                        + (reviewerHwnd == null ? "null" : Pointer.nativeValue(reviewerHwnd))
+
+                        + ") length=" + prompt.length());
+
+                AgentResponse response = deepSeekSession.getValidResponse(prompt, incomingFiles);
+
+                String responseRole = response.role();
+
+                debug("response role=[" + responseRole + "] type=" + response.type());
+
+                if (response.type() == AgentResponse.Type.USER_CHAT) {
+
+                    chatConsole.appendAgent("[" + responseRole + "] " + response.content());
+
+                    statusMarker.setState(StatusMarker.State.PAUSED);
+
+                    continue;
+
+                }
+
+                String psScript = response.content();
+
+                try {
+
+                    ScriptSaver.save(psScript);
+
+                } catch (IOException e) {
+
+                    chatConsole.appendSystem("Failed to save script.ps1 - " + e.getMessage());
+
+                    promptQueue.add(buildDiagnostic("Could not save script.ps1: " + e.getMessage()));
+
+                    continue;
+
+                }
+
+                psConsolePanel.append("[run] script.ps1");
+
+                ExecutionResult result;
+
+                try {
+
+                    result = powerShellExecutor.execute(Path.of("script.ps1"),
+
+                            line -> SwingUtilities.invokeLater(() -> psConsolePanel.append(line)));
+
+                } catch (IOException e) {
+
+                    deleteDeliveryScript();
+
+                    chatConsole.appendSystem("Failed to run script.ps1 - " + e.getMessage());
+
+                    promptQueue.add(buildDiagnostic("Could not execute script.ps1: " + e.getMessage()));
+
+                    continue;
+
+                }
+
+                deleteDeliveryScript();
+
+                List<MarkerEvent> events = MarkerParser.parse(result.stdout());
+
+                String scriptRole = MarkerProcessor.extractRole(events);
+
+                if (!scriptRole.isEmpty()) responseRole = scriptRole;
+
+                debug("effective role=[" + responseRole + "]");
+
+                MarkerProcessResult mp = MarkerProcessor.process(events, chatConsole, statusMarker);
+
+                boolean analystDone = "ANALYST".equals(responseRole)
+
+                        && mp == MarkerProcessResult.HALT
+
+                        && events.stream().anyMatch(ev -> ev.type() == MarkerType.AGENT_DONE);
+
+                if (analystDone) {
+
+                    statusMarker.setState(StatusMarker.State.WORKING);
+
+                    StringBuilder plp = new StringBuilder();
+
+                    plp.append("### ROLE_TO_ACT: PLANNER").append(System.lineSeparator());
+
+                    plp.append("ANALYST завершил анализ, окружение подготовлено.").append(System.lineSeparator());
+
+                    plp.append("Первая строка ответа: [PLANNER]. Первая строка PS-блока: Write-Output \"ROLE: PLANNER\" в кавычках.").append(System.lineSeparator());
+
+                    plp.append("Составь план в agent/project/PLAN.md через PS-скрипт, шаг за шагом.").append(System.lineSeparator());
+
+                    plp.append("Не используй AGENT_PAUSE. В конце — Write-Output \"USER_MSG: План сохранён\".").append(System.lineSeparator());
+
+                    promptQueue.add(plp.toString());
+
+                    debug("routed ANALYST(AGENT_DONE) -> PLANNER");
+
+                    continue;
+
+                }
+
+                if (mp == MarkerProcessResult.HALT) {
+
+                    try { switchToExecutor(); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+
+                    return;
+
+                }
+
+                String userMsgs = joinUserMsgs(events);
+
+                int outputLimit = config.getInt("ps.output.limit_chars", 60000);
+
+                boolean outputTooLarge = result.stdout() != null && result.stdout().length() > outputLimit;
+
+                String scriptLog;
+
+                if (outputTooLarge) {
+
+                    appendSystem("PS output exceeded limit " + outputLimit + " chars (stdout="
+
+                            + result.stdout().length() + "); notifying agent, log suppressed.");
+
+                    scriptLog = buildOutputLimitWarning(result, outputLimit);
+
+                } else {
+
+                    scriptLog = LogReporter.build(result);
+
+                }
+                scriptLog = formatFollowUp(result, scriptLog);
+
+
+                boolean isAdmissionQuestion = userMsgs.contains("Принимаете")
+
+                        || userMsgs.contains("принимаете")
+
+                        || userMsgs.contains("коммит")
+
+                        || userMsgs.contains("Коммит");
+
+                boolean honorPause = "ANALYST".equals(responseRole) || isAdmissionQuestion;
+
+                if (mp == MarkerProcessResult.PAUSE && !honorPause) {
+
+                    debug("ignoring AGENT_PAUSE for role " + responseRole
+
+                            + " (no admission question detected)");
+
+                } else if (mp == MarkerProcessResult.PAUSE) {
+
+                    appendSystem("Agent paused: " + pauseMessage(events));
+
+                    statusMarker.setState(StatusMarker.State.PAUSED);
+
+                    debug("honoring AGENT_PAUSE for role " + responseRole);
+
+                    continue;
+
+                }
+
+                if ("PLANNER".equals(responseRole)) {
+
+                    String planContent = readFileOrEmpty("agent/project/PLAN.md");
+
+                    StringBuilder jp = new StringBuilder();
+
+                    jp.append("### ROLE_TO_ACT: JUDGE").append(System.lineSeparator());
+
+                    jp.append("PLANNER закончил. Проверь план.").append(System.lineSeparator());
+
+                    jp.append("Первая строка ответа: [JUDGE]. Первая строка PS-блока: Write-Output ROLE: JUDGE в кавычках.").append(System.lineSeparator());
+
+                    jp.append("В USER_MSG выведи либо PLAN_APPROVED, либо PLAN_REJECTED: причина.").append(System.lineSeparator());
+
+                    jp.append("PLAN.md приведён ниже в этом же промпте. Используй его напрямую. Если нужны другие файлы — сгенерируй PS-скрипт с Get-Content -Raw -Encoding UTF8 и прочитай их. Не отвечай \"не вижу контента\".").append(System.lineSeparator());
+
+                    jp.append(System.lineSeparator());
+
+                    jp.append("### PLAN.md").append(System.lineSeparator());
+
+                    jp.append(planContent);
+
+                    promptQueue.add(jp.toString());
+
+                    pendingReviewerRole = "JUDGE";
+
+                    debug("routed PLANNER -> JUDGE(plan), pendingReviewerRole=JUDGE");
+
+                    continue;
+
+                }
+
+                if ("JUDGE".equals(responseRole)) {
+
+                    boolean hasPlanVerdict = userMsgs.contains("PLAN_APPROVED") || userMsgs.contains("PLAN_REJECTED");
+
+                    boolean hasResultVerdict = userMsgs.contains("RESULT_APPROVED") || userMsgs.contains("RESULT_REJECTED");
+
+                    if (!hasPlanVerdict && !hasResultVerdict) {
+
+                        StringBuilder cont = new StringBuilder();
+
+                        cont.append("### ROLE_TO_ACT: JUDGE").append(System.lineSeparator());
+
+                        cont.append("Продолжи проверку. Ниже — вывод твоего предыдущего PS-скрипта.").append(System.lineSeparator());
+
+                        cont.append("Если нужно — сгенерируй следующий PS-скрипт. Когда закончишь, вынеси вердикт в USER_MSG строго с токеном PLAN_APPROVED/PLAN_REJECTED/RESULT_APPROVED/RESULT_REJECTED.").append(System.lineSeparator());
+
+                        cont.append(System.lineSeparator());
+
+                        cont.append("### EXECUTION_LOG").append(System.lineSeparator()).append(scriptLog);
+
+                        promptQueue.add(cont.toString());
+
+                        debug("JUDGE exploration round, keeping reviewer window");
+
+                        continue;
+
+                    }
+
+                    activeReviewerRole = null;
+
+                    String verdictTag = hasPlanVerdict ? "JUDGE_VERDICT_PLAN" : "JUDGE_VERDICT_RESULT";
+
+                    StringBuilder ep = new StringBuilder();
+
+                    ep.append("### ROLE_TO_ACT: EXECUTOR").append(System.lineSeparator());
+
+                    ep.append("### ").append(verdictTag).append(System.lineSeparator());
+
+                    ep.append(userMsgs).append(System.lineSeparator()).append(System.lineSeparator());
+
+                    ep.append("Ты — EXECUTOR. Первая строка ответа: [EXECUTOR]. Первая строка PS-блока: Write-Output ROLE: EXECUTOR в кавычках.").append(System.lineSeparator());
+
+                    ep.append("Действуй по вердикту:").append(System.lineSeparator());
+
+                    ep.append("- PLAN_REJECTED: перепиши план в agent/project/PLAN.md, затем USER_MSG: READY_FOR_PLAN_REVIEW.").append(System.lineSeparator());
+
+                    ep.append("- PLAN_APPROVED: приступай к выполнению плана.").append(System.lineSeparator());
+
+                    ep.append("- RESULT_REJECTED: исправь ошибки, запусти сборку, затем USER_MSG: READY_FOR_RESULT_REVIEW.").append(System.lineSeparator());
+
+                    ep.append("- RESULT_APPROVED: USER_MSG: READY_FOR_CODE_REVIEW.").append(System.lineSeparator());
+
+                    ep.append(System.lineSeparator());
+
+                    ep.append("### EXECUTION_LOG").append(System.lineSeparator()).append(scriptLog);
+
+                    promptQueue.add(ep.toString());
+
+                    debug("routed JUDGE -> EXECUTOR (" + verdictTag + ")");
+
+                    continue;
+
+                }
+
+                if ("CODE_REVIEWER".equals(responseRole)) {
+
+                    boolean hasCodeVerdict = userMsgs.contains("CODE_APPROVED") || userMsgs.contains("CODE_REJECTED");
+
+                    if (!hasCodeVerdict) {
+
+                        StringBuilder cont = new StringBuilder();
+
+                        cont.append("### ROLE_TO_ACT: CODE_REVIEWER").append(System.lineSeparator());
+
+                        cont.append("Продолжи проверку. Ниже — вывод твоего предыдущего PS-скрипта.").append(System.lineSeparator());
+
+                        cont.append("Если нужно — сгенерируй следующий PS-скрипт. Когда закончишь, вынеси вердикт в USER_MSG строго с токеном CODE_APPROVED/CODE_REJECTED.").append(System.lineSeparator());
+
+                        cont.append(System.lineSeparator());
+
+                        cont.append("### EXECUTION_LOG").append(System.lineSeparator()).append(scriptLog);
+
+                        promptQueue.add(cont.toString());
+
+                        debug("CODE_REVIEWER exploration round, keeping reviewer window");
+
+                        continue;
+
+                    }
+
+                    activeReviewerRole = null;
+
+                    StringBuilder ep = new StringBuilder();
+
+                    ep.append("### ROLE_TO_ACT: EXECUTOR").append(System.lineSeparator());
+
+                    ep.append("### CODE_REVIEW_VERDICT").append(System.lineSeparator());
+
+                    ep.append(userMsgs).append(System.lineSeparator()).append(System.lineSeparator());
+
+                    ep.append("Ты — EXECUTOR. Первая строка ответа: [EXECUTOR]. Первая строка PS-блока: Write-Output ROLE: EXECUTOR в кавычках.").append(System.lineSeparator());
+
+                    ep.append("Действуй по вердикту:").append(System.lineSeparator());
+
+                    ep.append("- CODE_REJECTED: исправь и снова USER_MSG: READY_FOR_CODE_REVIEW.").append(System.lineSeparator());
+
+                    ep.append("- CODE_APPROVED: задай пользователю вопрос о приёмке и коммите:").append(System.lineSeparator());
+
+                    ep.append("  Write-Output USER_MSG: Работа готова. Принимаете? Разрешаете коммит изменений в git?").append(System.lineSeparator());
+
+                    ep.append("  Write-Output AGENT_PAUSE: ожидание решения пользователя о приёмке и коммите.").append(System.lineSeparator());
+
+                    ep.append(System.lineSeparator());
+
+                    ep.append("### EXECUTION_LOG").append(System.lineSeparator()).append(scriptLog);
+
+                    promptQueue.add(ep.toString());
+
+                    debug("routed CODE_REVIEWER -> EXECUTOR");
+
+                    continue;
+
+                }
+
+                if ("EXECUTOR".equals(responseRole)) {
+
+                    if (userMsgs.contains("READY_FOR_RESULT_REVIEW")) {
+
+                        StringBuilder jp = new StringBuilder();
+
+                        jp.append("### ROLE_TO_ACT: JUDGE").append(System.lineSeparator());
+
+                        jp.append("EXECUTOR завершил этап. Проверь результат.").append(System.lineSeparator());
+
+                        jp.append("Первая строка ответа: [JUDGE]. Первая строка PS-блока: Write-Output ROLE: JUDGE в кавычках.").append(System.lineSeparator());
+
+                        jp.append("В USER_MSG выведи либо RESULT_APPROVED, либо RESULT_REJECTED: причина.").append(System.lineSeparator());
+
+                        jp.append("Если для проверки тебе нужны PLAN.md, WIP.md или список файлов — сгенерируй PS-скрипт с Get-Content -Raw -Encoding UTF8 и прочитай их сам в следующей итерации. Не отвечай \"не вижу контента\" — сгенерируй PS-скрипт.").append(System.lineSeparator());
+
+                        jp.append(System.lineSeparator());
+
+                        jp.append("### EXECUTION_LOG").append(System.lineSeparator()).append(scriptLog);
+
+                        promptQueue.add(jp.toString());
+
+                        pendingReviewerRole = "JUDGE";
+
+                        debug("routed EXECUTOR(READY_FOR_RESULT_REVIEW) -> JUDGE(result), pendingReviewerRole=JUDGE");
+
+                        continue;
+
+                    }
+
+                    if (userMsgs.contains("READY_FOR_CODE_REVIEW")) {
+
+                        StringBuilder cp = new StringBuilder();
+
+                        cp.append("### ROLE_TO_ACT: CODE_REVIEWER").append(System.lineSeparator());
+
+                        cp.append("Проведи код-ревью. Опирайся на git-diff, а не на слова исполнителя.").append(System.lineSeparator());
+
+                        cp.append("Первая строка ответа: [CODE_REVIEWER]. Первая строка PS-блока: Write-Output ROLE: CODE_REVIEWER в кавычках.").append(System.lineSeparator());
+
+                        cp.append("Проверяй ТОЛЬКО файлы проекта пользователя. script.ps1 — временный контейнер доставки, приложение удаляет его сразу после выполнения; НИКОГДА не упоминай его в ревью, не открывай, не ищи в git status.").append(System.lineSeparator());
+
+                        cp.append("Если репозиторий инициализирован: git log --oneline, git status --short, git diff HEAD.").append(System.lineSeparator());
+
+                        cp.append("Если нет — читай ключевые файлы исходников через Get-Content -Raw -Encoding UTF8 и оценивай код как написанный с нуля.").append(System.lineSeparator());
+
+                        cp.append("Если для оценки нужно прочитать дополнительные файлы — сгенерируй PS-скрипт с Get-Content. Не отвечай \"не вижу контента\".").append(System.lineSeparator());
+
+                        cp.append("В USER_MSG выведи либо CODE_APPROVED, либо CODE_REJECTED: причина.").append(System.lineSeparator());
+
+                        cp.append(System.lineSeparator());
+
+                        cp.append("### EXECUTION_LOG").append(System.lineSeparator()).append(scriptLog);
+
+                        promptQueue.add(cp.toString());
+
+                        pendingReviewerRole = "CODE_REVIEWER";
+
+                        debug("routed EXECUTOR(READY_FOR_CODE_REVIEW) -> CODE_REVIEWER, pendingReviewerRole=CODE_REVIEWER");
+
+                        continue;
+
+                    }
+
+                    if (userMsgs.contains("READY_FOR_PLAN_REVIEW")) {
+
+                        String planContent = readFileOrEmpty("agent/project/PLAN.md");
+
+                        StringBuilder jp = new StringBuilder();
+
+                        jp.append("### ROLE_TO_ACT: JUDGE").append(System.lineSeparator());
+
+                        jp.append("PLANNER закончил. Проверь план.").append(System.lineSeparator());
+
+                        jp.append("Первая строка ответа: [JUDGE]. Первая строка PS-блока: Write-Output ROLE: JUDGE в кавычках.").append(System.lineSeparator());
+
+                        jp.append("В USER_MSG выведи либо PLAN_APPROVED, либо PLAN_REJECTED: причина.").append(System.lineSeparator());
+
+                        jp.append("PLAN.md приведён ниже в этом же промпте. Используй его напрямую. Если нужны другие файлы — сгенерируй PS-скрипт с Get-Content -Raw -Encoding UTF8. Не отвечай \"не вижу контента\".").append(System.lineSeparator());
+
+                        jp.append(System.lineSeparator());
+
+                        jp.append("### PLAN.md").append(System.lineSeparator()).append(planContent);
+
+                        promptQueue.add(jp.toString());
+
+                        pendingReviewerRole = "JUDGE";
+
+                        debug("routed EXECUTOR(READY_FOR_PLAN_REVIEW) -> JUDGE(plan), pendingReviewerRole=JUDGE");
+
+                        continue;
+
+                    }
+
+                }
+
+                String followUp = PromptBuilder.buildFollowUp(
+
+                        SystemInstructionProvider.getFormatReminder(), scriptLog);
+
+                promptQueue.add(followUp);
+
+                debug("routed " + responseRole + " -> EXECUTOR");
+
+            } catch (IllegalStateException e) {
+
+                if (EmergencyStop.isStopped()) {
+
+                    statusMarker.setState(StatusMarker.State.STOPPED);
+
+                    return;
+
+                }
+
+                chatConsole.appendSystem("Agent paused: " + e.getMessage());
+
+                statusMarker.setState(StatusMarker.State.PAUSED);
+
+                continue;
+
+            } catch (InterruptedException e) {
+
+                Thread.currentThread().interrupt();
+
+                return;
+
+            } catch (Exception e) {
+
+                chatConsole.appendSystem("Error - " + e.getMessage());
+
+                statusMarker.setState(StatusMarker.State.STOPPED);
+
+                return;
+
+            }
+
+        }
+
+    }
+
+    private static String pauseMessage(List<MarkerEvent> events) {
+
+        for (MarkerEvent e : events) {
+
+            if (e.type() == MarkerType.AGENT_PAUSE) return e.message();
+
+        }
+
+        return "";
+
+    }
+
+    private static String joinUserMsgs(List<MarkerEvent> events) {
+
+        StringBuilder sb = new StringBuilder();
+
+        for (MarkerEvent e : events) {
+
+            if (e.type() == MarkerType.USER_MSG) {
+
+                if (sb.length() > 0) sb.append(" | ");
+
+                sb.append(e.message());
+
+            }
+
+        }
+
+        return sb.toString();
+
+    }
+
+    private String readFileOrEmpty(String path) {
+
+        try {
+
+            return Files.readString(Path.of(path), StandardCharsets.UTF_8);
+
+        } catch (IOException e) {
+
+            AppLogger.warn("readFileOrEmpty failed for " + path + ": " + e.getMessage());
+
+            return "(файл не найден: " + path + ")";
+
+        }
+
+    }
+
+    private void appendSystem(String line) {
+
+        SwingUtilities.invokeLater(() -> chatConsole.appendSystem(line));
+
+    }
+
+    private static String buildOutputLimitWarning(ExecutionResult r, int limit) {
+
+        int so = r.stdout() == null ? 0 : r.stdout().length();
+
+        return "### EXECUTION_OUTPUT_LIMIT_EXCEEDED" + System.lineSeparator()
+
+                + "stdout=" + so + " chars, limit=" + limit + " chars." + System.lineSeparator()
+
+                + "Разбей запрос вывода на несколько этапов или перепроверь корректность запроса." + System.lineSeparator()
+
+                + "- Не запрашивай содержимое целых папок." + System.lineSeparator()
+
+                + "- Сначала получи список файлов с размерами: Get-ChildItem -Recurse -File | Select-Object FullName, Length." + System.lineSeparator()
+
+                + "- Затем выборочно читай нужные файлы (1-3 за раз) через Get-Content -Raw -Encoding UTF8 <путь>." + System.lineSeparator()
+
+                + "- Файлы в папке agent/ недоступны агентам — не запрашивай их." + System.lineSeparator();
+
+    }
+
+    private static String buildDiagnostic(String reason) {
+
+        return "### EXECUTION_ERROR" + System.lineSeparator() + reason + System.lineSeparator()
+
+                + "### EXIT_CODE" + System.lineSeparator() + "-1";
+
+    }
+
+
+    private static final long FOLLOWUP_WARN_THRESHOLD_SECONDS = 1200L;
+
+    private static final long FOLLOWUP_TIMEOUT_SECONDS = 1800L;
+
+    static String formatFollowUp(ExecutionResult result, String log) {
+
+        if (result.isTimedOut()) {
+
+            return "Скрипт остановлен по лимиту 30 минут. Ниже лог выполнения до момента остановки:"
+
+                    + System.lineSeparator() + log;
+
+        }
+
+        long elapsed = result.getElapsedSeconds();
+
+        if (elapsed >= FOLLOWUP_WARN_THRESHOLD_SECONDS && elapsed <= FOLLOWUP_TIMEOUT_SECONDS) {
+
+            return log + System.lineSeparator()
+
+                    + "Напоминание: время выполнения одного скрипта не должно превышать 30 минут. Затратные задачи дробите на этапы.";
+
+        }
+
+        return log;
+
+    }
+}
