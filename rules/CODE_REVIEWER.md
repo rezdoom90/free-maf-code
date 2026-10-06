@@ -72,7 +72,7 @@
 </directive>
 
 <directive id="INPUTS">
-  <require>MEMORY.md, WIP.md, PLAN.md as context.</require>
+  <require>agent/project/MEMORY.md, agent/project/WIP.md, agent/project/PLAN.md as context.</require>
   <require>Baseline and final content of the changed files (baseline = last commit).</require>
   <forbid>Guessing content - if something is missing, FAIL with a description of what is missing.</forbid>
 </directive>
@@ -82,4 +82,5 @@
   <rule>При ревью кода/результата обязательная проверка: сгенерированные PS-скрипты укладываются в 30 минут.</rule>
   <rule>Если хотя бы один скрипт превышает 30 минут — вердикт CODE_REJECTED.</rule>
 </directive>
+<directive id="DIRECTIVE_FILE_PROTECTION" severity="CRITICAL">   <rule>During review, inspect the generated PS scripts for any write operations against agent/rules/*.md or agent/AGENT_INSTRUCTIONS.md.</rule>   <rule>If such operations are present, return a FAIL verdict.</rule> </directive> 
 </role>

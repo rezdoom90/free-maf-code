@@ -68,8 +68,13 @@ public final class PowerShellExecutor {
     public ExecutionResult execute(Path script) throws IOException, InterruptedException {
 
         String scriptContent = Files.readString(script, StandardCharsets.UTF_8);
-
-        ScriptLogger.save(scriptContent);
+DirectiveValidator.ValidationResult validation = DirectiveValidator.validate(scriptContent);
+if (!validation.allowed()) {
+    ExecutionResult blocked = new ExecutionResult("", validation.reason(), -1, false, 0L);
+    ExecutionLogger.save(blocked);
+    return blocked;
+}
+ScriptLogger.save(scriptContent);
 
         String scriptPath = script.toAbsolutePath().toString().replace("'", "''");
 

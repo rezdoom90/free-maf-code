@@ -80,7 +80,7 @@
 </directive>
 
 <directive id="MANDATORY_FILE_CHECKS">
-  <rule>Before issuing the verdict, make sure you have all relevant files: MEMORY.md, WIP.md, PLAN.md; for execution mode also the change diff and execution logs.</rule>
+  <rule>Before issuing the verdict, make sure you have all relevant files: agent/project/MEMORY.md, agent/project/WIP.md, agent/project/PLAN.md; for execution mode also the change diff and execution logs.</rule>
   <rule>If any critical file is missing - FAIL with a description of what is missing.</rule>
 </directive>
 
@@ -93,4 +93,5 @@
   <rule>При ревью плана обязательная проверка: ожидаемое время выполнения каждого PS-скрипта в плане — не более 30 минут.</rule>
   <rule>Если хотя бы один скрипт превышает 30 минут — вердикт PLAN_REJECTED.</rule>
 </directive>
+<directive id="DIRECTIVE_FILE_PROTECTION" severity="CRITICAL">   <rule>During plan review, verify that the plan does NOT require the agent to write into agent/rules/*.md or agent/AGENT_INSTRUCTIONS.md.</rule>   <rule>If such a step is present, return a FAIL verdict and state that directive-file changes are performed manually by the user, not by the agent.</rule> </directive> 
 </role>
