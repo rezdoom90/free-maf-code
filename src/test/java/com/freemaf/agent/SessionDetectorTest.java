@@ -392,5 +392,46 @@ class SessionDetectorTest {
 
     }
 
+
+    @Test
+    void reviewerPhaseReviewerInIgnoredListTreatedAsAbsent() {
+        Config c = newConfig();
+        c.setLastManagedHwnd(100L);
+        c.setLastReviewerHwnd(200L);
+        c.setLastPhase("JUDGE");
+        c.setIgnoredHwnds(java.util.List.of(200L));
+        try (MockedStatic<WindowFinder> wf = mockStatic(WindowFinder.class);
+             MockedStatic<WinApiService> wa = mockStatic(WinApiService.class)) {
+            wf.when(() -> WindowFinder.findByHwnd(eq(100L), anyString()))
+                    .thenReturn(Optional.of(win(100L, "DeepSeek - work")));
+            wf.when(() -> WindowFinder.findByHwnd(eq(200L), anyString()))
+                    .thenReturn(Optional.of(win(200L, "DeepSeek - judge")));
+            SessionDetector.SessionDecision d = SessionDetector.detect("DeepSeek", c);
+            assertEquals(SessionDetector.Decision.RECOVER_NEW_EXECUTOR, d.decision());
+            wa.verify(() -> WinApiService.closeWindow(200L), times(0));
+        } finally {
+            c.setIgnoredHwnds(java.util.List.of());
+        }
+    }
+
+    @Test
+    void executorPhaseReviewerInIgnoredListNotClosed() {
+        Config c = newConfig();
+        c.setLastManagedHwnd(100L);
+        c.setLastReviewerHwnd(200L);
+        c.setIgnoredHwnds(java.util.List.of(200L));
+        try (MockedStatic<WindowFinder> wf = mockStatic(WindowFinder.class);
+             MockedStatic<WinApiService> wa = mockStatic(WinApiService.class)) {
+            wf.when(() -> WindowFinder.findByHwnd(eq(100L), anyString()))
+                    .thenReturn(Optional.of(win(100L, "DeepSeek - work")));
+            wf.when(() -> WindowFinder.findByHwnd(eq(200L), anyString()))
+                    .thenReturn(Optional.of(win(200L, "DeepSeek - orphan")));
+            SessionDetector.SessionDecision d = SessionDetector.detect("DeepSeek", c);
+            assertEquals(SessionDetector.Decision.CONTINUE_OLD_SESSION, d.decision());
+            wa.verify(() -> WinApiService.closeWindow(200L), times(0));
+        } finally {
+            c.setIgnoredHwnds(java.util.List.of());
+        }
+    }
 }
 

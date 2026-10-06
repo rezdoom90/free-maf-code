@@ -123,4 +123,45 @@ class ResponseParserTest {
 
     }
 
+
+    @Test
+    void migrationConfirmAcceptedWithoutFence() {
+        assertTrue(ResponseParser.isValidMigrationConfirm("AGENT_SESSION_MIGRATE_CONFIRM: ok"));
+    }
+
+    @Test
+    void migrationConfirmRejectedWhenFencePresent() {
+        assertFalse(ResponseParser.isValidMigrationConfirm("```" + System.lineSeparator()
+                + "AGENT_SESSION_MIGRATE_CONFIRM: ok" + System.lineSeparator() + "```"));
+    }
+
+    @Test
+    void migrationConfirmRejectedWhenStartAlsoPresent() {
+        String r = "AGENT_SESSION_MIGRATE_START: x" + System.lineSeparator()
+                + "AGENT_SESSION_MIGRATE_CONFIRM: y";
+        assertFalse(ResponseParser.isValidMigrationConfirm(r));
+    }
+
+    @Test
+    void migrationConfirmRejectedWhenMultipleConfirms() {
+        String r = "AGENT_SESSION_MIGRATE_CONFIRM: a" + System.lineSeparator()
+                + "AGENT_SESSION_MIGRATE_CONFIRM: b";
+        assertFalse(ResponseParser.isValidMigrationConfirm(r));
+    }
+
+    @Test
+    void migrationConfirmNullIsSafe() {
+        assertFalse(ResponseParser.isValidMigrationConfirm(null));
+        assertFalse(ResponseParser.isValidMigrationConfirm(""));
+    }
+
+    @Test
+    void isValidScriptRejectsRawMigrationStart() {
+        assertFalse(ResponseParser.isValidScript("AGENT_SESSION_MIGRATE_START: prep"));
+    }
+
+    @Test
+    void isValidScriptRejectsRawMigrationConfirm() {
+        assertFalse(ResponseParser.isValidScript("AGENT_SESSION_MIGRATE_CONFIRM: done"));
+    }
 }

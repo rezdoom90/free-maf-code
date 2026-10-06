@@ -85,4 +85,28 @@ class MarkerParserTest {
 
     }
 
+
+    @Test
+    void parsesSessionMigrateStart() {
+        List<MarkerEvent> events = MarkerParser.parse("AGENT_SESSION_MIGRATE_START: prepare");
+        assertEquals(1, events.size());
+        assertEquals(MarkerType.AGENT_SESSION_MIGRATE_START, events.get(0).type());
+        assertEquals("prepare", events.get(0).message());
+    }
+
+    @Test
+    void parsesSessionMigrateConfirm() {
+        List<MarkerEvent> events = MarkerParser.parse("AGENT_SESSION_MIGRATE_CONFIRM: done");
+        assertEquals(1, events.size());
+        assertEquals(MarkerType.AGENT_SESSION_MIGRATE_CONFIRM, events.get(0).type());
+        assertEquals("done", events.get(0).message());
+    }
+
+    @Test
+    void ignoresMigrateMarkersInsideWriteOutputString() {
+        String stdout = "Write-Output \"AGENT_SESSION_MIGRATE_START: prepare\"" + System.lineSeparator()
+                + "Write-Output \"AGENT_SESSION_MIGRATE_CONFIRM: done\"";
+        List<MarkerEvent> events = MarkerParser.parse(stdout);
+        assertTrue(events.isEmpty());
+    }
 }

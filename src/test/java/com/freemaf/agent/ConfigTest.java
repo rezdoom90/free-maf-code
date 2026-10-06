@@ -1,6 +1,9 @@
 
 package com.freemaf.agent;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -92,6 +95,56 @@ class ConfigTest {
             config.setLastPhase("EXECUTOR");
             config.setLastReviewerHwnd(0L);
             config.setLastReviewerTitle("");
+        }
+    }
+
+    @Test
+    void sessionExecutorMessageCounterDefaults() {
+        assertEquals("0", Config.DEFAULTS.get("session.executorMessageCount"));
+        assertEquals("", Config.DEFAULTS.get("session.ignoredHwnds"));
+    }
+
+    @Test
+    void sessionExecutorMessageCounterRoundTrip() {
+        Config config = new Config();
+        long previous = config.getExecutorMessageCount();
+        config.setExecutorMessageCount(42L);
+        try {
+            Config reread = new Config();
+            assertEquals(42L, reread.getExecutorMessageCount());
+        } finally {
+            config.setExecutorMessageCount(previous);
+        }
+    }
+
+    @Test
+    void ignoredHwndsRoundTripFiltersNonPositive() {
+        Config config = new Config();
+        List<Long> previous = config.getIgnoredHwnds();
+        config.setIgnoredHwnds(List.of(-1L, 0L, 1L, 2L, 3L));
+        try {
+            Config reread = new Config();
+            assertEquals(List.of(1L, 2L, 3L), reread.getIgnoredHwnds());
+        } finally {
+            config.setIgnoredHwnds(previous);
+        }
+    }
+
+    @Test
+    void ignoredHwndsTrimsToLastTwenty() {
+        Config config = new Config();
+        List<Long> previous = config.getIgnoredHwnds();
+        List<Long> input = new ArrayList<>();
+        for (long i = 1L; i <= 25L; i++) input.add(i);
+        config.setIgnoredHwnds(input);
+        try {
+            Config reread = new Config();
+            List<Long> got = reread.getIgnoredHwnds();
+            assertEquals(20, got.size());
+            assertEquals(6L, got.get(0));
+            assertEquals(25L, got.get(19));
+        } finally {
+            config.setIgnoredHwnds(previous);
         }
     }
 }

@@ -11,6 +11,10 @@ public enum MarkerType {
 
     AGENT_DONE,
 
+    AGENT_SESSION_MIGRATE_START,
+
+    AGENT_SESSION_MIGRATE_CONFIRM,
+
     ROLE
 
 }

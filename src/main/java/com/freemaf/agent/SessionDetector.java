@@ -1,6 +1,7 @@
 package com.freemaf.agent;
 
 import com.freemaf.agent.winapi.WinApiService;
+import java.util.List;
 
 public final class SessionDetector {
 
@@ -29,8 +30,12 @@ public final class SessionDetector {
         String lastPhase = config.getLastPhase();
         long lastManagedHwnd = config.getLastManagedHwnd();
         long lastReviewerHwnd = config.getLastReviewerHwnd();
+        List<Long> ignored = config.getIgnoredHwnds();
         WindowInfo executorWindow = WindowFinder.findByHwnd(lastManagedHwnd, titleSubstring).orElse(null);
         WindowInfo reviewerWindow = WindowFinder.findByHwnd(lastReviewerHwnd, titleSubstring).orElse(null);
+        if (reviewerWindow != null && ignored.contains(reviewerWindow.hwndValue())) {
+            reviewerWindow = null;
+        }
         boolean reviewerPhase = "JUDGE".equals(lastPhase) || "CODE_REVIEWER".equals(lastPhase);
         if (!reviewerPhase) {
             if (reviewerWindow != null) {
@@ -63,3 +68,4 @@ public final class SessionDetector {
     private static final String RECOVER_MESSAGE =
             "Предыдущая сессия была прервана. Последний запрос проверки завершился ошибкой при выполнении, проверка не произошла. Ошибка не на твоей стороне, ничего срочно исправлять не нужно. Запроси проверку заново.";
 }
+

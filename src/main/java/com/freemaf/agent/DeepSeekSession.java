@@ -29,6 +29,8 @@ public final class DeepSeekSession {
 
     private volatile boolean regenOffsetActive = false;
 
+    private volatile boolean awaitingMigrationConfirm = false;
+
     public DeepSeekSession(Config config, InputSimulator inputSimulator, ClipboardService clipboardService,
 
                            PixelColorService pixelColorService, WindowManager windowManager) {
@@ -48,6 +50,8 @@ public final class DeepSeekSession {
     public void setDebugSink(Consumer<String> sink) { this.debugSink = sink; }
 
     public void setWindowRecoveryHandler(WindowRecoveryHandler handler) { this.windowRecoveryHandler = handler; }
+
+    public void setAwaitingMigrationConfirm(boolean flag) { this.awaitingMigrationConfirm = flag; }
 
     private void debug(String line) {
 
@@ -235,6 +239,9 @@ public final class DeepSeekSession {
 
         }
 
+        if (awaitingMigrationConfirm && ResponseParser.isValidMigrationConfirm(rawResponse)) {
+            return AgentResponse.userChat(role, "AGENT_SESSION_MIGRATE_CONFIRM_ACK");
+        }
         if (ResponseParser.isValidScript(rawResponse)) {
 
             return AgentResponse.script(role, ResponseParser.extractScript(rawResponse));

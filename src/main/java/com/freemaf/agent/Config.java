@@ -13,7 +13,9 @@ import java.nio.file.Files;
 
 import java.nio.file.Path;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 
 import java.util.Map;
 
@@ -168,6 +170,8 @@ public final class Config {
         DEFAULTS.put("session.lastPhase", "EXECUTOR");
         DEFAULTS.put("session.lastReviewerHwnd", "0");
         DEFAULTS.put("session.lastReviewerTitle", "");
+        DEFAULTS.put("session.executorMessageCount", "0");
+        DEFAULTS.put("session.ignoredHwnds", "");
 
     }
 
@@ -330,61 +334,165 @@ public final class Config {
         return getLong("watchdog.script.check.interval.ms", 1000L);
     }
 
-        public long getScriptWarnThresholdSeconds() {
-        return getLong("watchdog.script.warn.threshold.seconds", 1200L);
-    }
-
-    public long getLastManagedHwnd() {
-        return getLong("session.lastManagedHwnd", 0L);
-    }
-
-    public String getLastManagedTitle() {
-        return get("session.lastManagedTitle", "");
-    }
-
-    public String getLastPhase() {
-        return get("session.lastPhase", "EXECUTOR");
-    }
-
-    public long getLastReviewerHwnd() {
-        return getLong("session.lastReviewerHwnd", 0L);
-    }
-
-    public String getLastReviewerTitle() {
-        return get("session.lastReviewerTitle", "");
-    }
-
-    public void setLastManagedHwnd(long hwnd) {
-        props.setProperty("session.lastManagedHwnd", String.valueOf(hwnd));
-        persist();
-    }
-
-    public void setLastManagedTitle(String title) {
-        props.setProperty("session.lastManagedTitle", title == null ? "" : title);
-        persist();
-    }
-
-    public void setLastPhase(String phase) {
-        props.setProperty("session.lastPhase", phase == null ? "EXECUTOR" : phase);
-        persist();
-    }
-
-    public void setLastReviewerHwnd(long hwnd) {
-        props.setProperty("session.lastReviewerHwnd", String.valueOf(hwnd));
-        persist();
-    }
-
-    public void setLastReviewerTitle(String title) {
-        props.setProperty("session.lastReviewerTitle", title == null ? "" : title);
-        persist();
-    }
-
-    public void persist() {
-        try {
-            save();
-        } catch (IOException e) {
-            AppLogger.warn("Config persist failed: " + e.getMessage());
-        }
-    }
-}
+        public long getScriptWarnThresholdSeconds() {
+
+        return getLong("watchdog.script.warn.threshold.seconds", 1200L);
+
+    }
+
+
+
+    public long getLastManagedHwnd() {
+
+        return getLong("session.lastManagedHwnd", 0L);
+
+    }
+
+
+
+    public String getLastManagedTitle() {
+
+        return get("session.lastManagedTitle", "");
+
+    }
+
+
+
+    public String getLastPhase() {
+
+        return get("session.lastPhase", "EXECUTOR");
+
+    }
+
+
+
+    public long getLastReviewerHwnd() {
+
+        return getLong("session.lastReviewerHwnd", 0L);
+
+    }
+
+
+
+    public String getLastReviewerTitle() {
+
+        return get("session.lastReviewerTitle", "");
+
+    }
+
+
+
+    public void setLastManagedHwnd(long hwnd) {
+
+        props.setProperty("session.lastManagedHwnd", String.valueOf(hwnd));
+
+        persist();
+
+    }
+
+
+
+    public void setLastManagedTitle(String title) {
+
+        props.setProperty("session.lastManagedTitle", title == null ? "" : title);
+
+        persist();
+
+    }
+
+
+
+    public void setLastPhase(String phase) {
+
+        props.setProperty("session.lastPhase", phase == null ? "EXECUTOR" : phase);
+
+        persist();
+
+    }
+
+
+
+    public void setLastReviewerHwnd(long hwnd) {
+
+        props.setProperty("session.lastReviewerHwnd", String.valueOf(hwnd));
+
+        persist();
+
+    }
+
+
+
+    public void setLastReviewerTitle(String title) {
+
+        props.setProperty("session.lastReviewerTitle", title == null ? "" : title);
+
+        persist();
+
+    }
+
+
+
+    public void persist() {
+
+        try {
+
+            save();
+
+        } catch (IOException e) {
+
+            AppLogger.warn("Config persist failed: " + e.getMessage());
+
+        }
+
+    }
+
+
+    public long getExecutorMessageCount() {
+        long value = getLong("session.executorMessageCount", 0L);
+        return value < 0 ? 0L : value;
+    }
+
+    public List<Long> getIgnoredHwnds() {
+        String raw = get("session.ignoredHwnds", "");
+        List<Long> result = new ArrayList<>();
+        if (raw == null || raw.isBlank()) return result;
+        for (String token : raw.split(",")) {
+            String trimmed = token.trim();
+            if (trimmed.isEmpty()) continue;
+            try {
+                long v = Long.parseLong(trimmed);
+                if (v > 0L) result.add(v);
+            } catch (NumberFormatException e) {
+                // skip non-numeric tokens
+            }
+        }
+        return result;
+    }
+
+    public void setExecutorMessageCount(long count) {
+        props.setProperty("session.executorMessageCount", String.valueOf(count < 0 ? 0L : count));
+        persist();
+    }
+
+    public void setIgnoredHwnds(List<Long> hwnds) {
+        List<Long> sanitized = new ArrayList<>();
+        if (hwnds != null) {
+            for (Long h : hwnds) {
+                if (h != null && h > 0L) sanitized.add(h);
+            }
+        }
+        int size = sanitized.size();
+        if (size > 20) {
+            sanitized = new ArrayList<>(sanitized.subList(size - 20, size));
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < sanitized.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(sanitized.get(i));
+        }
+        props.setProperty("session.ignoredHwnds", sb.toString());
+        persist();
+    }
+}
+
 

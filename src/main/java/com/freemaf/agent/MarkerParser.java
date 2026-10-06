@@ -61,6 +61,14 @@ public final class MarkerParser {
 
         }
 
+        if (line.startsWith("AGENT_SESSION_MIGRATE_START:")) {
+            return Optional.of(new MarkerEvent(MarkerType.AGENT_SESSION_MIGRATE_START, afterPrefix(line, "AGENT_SESSION_MIGRATE_START:")));
+        }
+
+        if (line.startsWith("AGENT_SESSION_MIGRATE_CONFIRM:")) {
+            return Optional.of(new MarkerEvent(MarkerType.AGENT_SESSION_MIGRATE_CONFIRM, afterPrefix(line, "AGENT_SESSION_MIGRATE_CONFIRM:")));
+        }
+
         return Optional.empty();
 
     }

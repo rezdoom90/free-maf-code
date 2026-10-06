@@ -99,6 +99,25 @@ public final class ResponseParser {
 
     }
 
+    public static boolean isValidMigrationConfirm(String raw) {
+        if (raw == null || raw.isBlank()) return false;
+        String stripped = stripRoleTag(raw);
+        if (stripped == null) return false;
+        String trimmed = stripped.strip();
+        if (trimmed.isEmpty()) return false;
+        long fenceCount = trimmed.lines()
+                .filter(line -> line.strip().startsWith(FENCE)).count();
+        if (fenceCount != 0L) return false;
+        int startCount = 0;
+        int confirmCount = 0;
+        for (String line : trimmed.split("\\R", -1)) {
+            String t = line.strip();
+            if (t.startsWith("AGENT_SESSION_MIGRATE_START:")) startCount++;
+            if (t.startsWith("AGENT_SESSION_MIGRATE_CONFIRM:")) confirmCount++;
+        }
+        return confirmCount == 1 && startCount == 0;
+    }
+
     private static boolean containsRawMarkers(String text) {
 
         for (String line : text.split("\\R", -1)) {
@@ -107,7 +126,9 @@ public final class ResponseParser {
 
             if (t.startsWith("USER_MSG:") || t.startsWith("AGENT_PAUSE:")
 
-                    || t.startsWith("AGENT_STOP:") || t.startsWith("AGENT_DONE:")) {
+                    || t.startsWith("AGENT_STOP:") || t.startsWith("AGENT_DONE:")
+                    || t.startsWith("AGENT_SESSION_MIGRATE_START:")
+                    || t.startsWith("AGENT_SESSION_MIGRATE_CONFIRM:")) {
 
                 return true;
 
