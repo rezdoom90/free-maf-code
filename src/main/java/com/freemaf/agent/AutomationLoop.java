@@ -144,7 +144,8 @@ public final class AutomationLoop implements Runnable {
                 config.setLastReviewerTitle("");
 
                 config.setExecutorMessageCount(0L);
-                debug("bootstrap: OPEN_NEW_CHAT hwnd=" + Pointer.nativeValue(executorHwnd));
+                d = new SessionDetector.SessionDecision(SessionDetector.Decision.OPEN_NEW_CHAT, w, w, null, null);
+                                debug("bootstrap: OPEN_NEW_CHAT hwnd=" + Pointer.nativeValue(executorHwnd));
 
             }
 
@@ -197,7 +198,8 @@ public final class AutomationLoop implements Runnable {
                 promptQueue.add(Prompt.user(d.recoveryMessage(), List.of()));
 
                 config.setExecutorMessageCount(0L);
-                debug("bootstrap: RECOVER_NEW_EXECUTOR hwnd=" + Pointer.nativeValue(executorHwnd));
+                d = new SessionDetector.SessionDecision(SessionDetector.Decision.RECOVER_NEW_EXECUTOR, w, w, null, d.recoveryMessage());
+                                debug("bootstrap: RECOVER_NEW_EXECUTOR hwnd=" + Pointer.nativeValue(executorHwnd));
 
             }
 

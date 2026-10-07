@@ -333,8 +333,6 @@ public final class MainFrame extends JFrame implements WindowRecoveryHandler {
 
         topRow.add(Box.createHorizontalStrut(12));
         startButton = new JButton("\u25B6");
-        JButton startButton = new JButton("\u25B6");
-
         JButton stopButton = new JButton("Stop (Ctrl+Shift+S)");
 
         JButton restartButton = new JButton("Restart Plan");
@@ -343,8 +341,6 @@ public final class MainFrame extends JFrame implements WindowRecoveryHandler {
 
         JButton clearChatButton = new JButton("Clear Chat");
         startButton.setFont(new Font("Segoe UI Symbol", Font.PLAIN, 18));
-        startButton.setFont(new Font("Dialog", Font.PLAIN, 14));
-
         topRow.add(startButton);
 
         topRow.add(stopButton);
@@ -461,8 +457,6 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
 
         rebuildAttachmentsList();
         startButton.addActionListener(e -> handleStartButtonClick());
-        startButton.addActionListener(e -> startAction());
-
         stopButton.addActionListener(e -> stopAction());
 
         restartButton.addActionListener(e -> restartAction());
