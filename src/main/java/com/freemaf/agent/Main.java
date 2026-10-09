@@ -30,6 +30,8 @@ public final class Main {
         Config config = new Config();
 
         DarkTheme.apply();
+        int cleaned = ProcessRegistry.cleanupStale();
+        if (cleaned > 0) AppLogger.info("ProcessRegistry: cleaned " + cleaned + " stale entries");
 
         SwingUtilities.invokeLater(() -> new MainFrame(config).setVisible(true));
 

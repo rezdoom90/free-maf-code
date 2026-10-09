@@ -721,11 +721,12 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
         updateSendButtonState();
 
         if (currentState == StatusMarker.State.STOPPED) {
-
+            config.setResumeAfterStop(false); // user gave fresh prompt
             appendSystem("Auto-start (STOPPED → Start).");
-
             startAction();
-
+        } else if (currentState == StatusMarker.State.PAUSED && currentLoop != null) {
+            appendSystem("Resuming paused loop to deliver user message.");
+            currentLoop.resumeAfterUserInput();
         }
 
     }
@@ -929,6 +930,16 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
             appendSystem("Waiting for a user message in the input field below.");
             this.currentLoop = loop;
             updateStartButton();
+            if (config.getResumeAfterStop()) {
+                config.setResumeAfterStop(false);
+                if (decision.decision() == SessionDetector.Decision.CONTINUE_OLD_SESSION
+                        || decision.decision() == SessionDetector.Decision.OPEN_NEW_CHAT) {
+                    String resumeMsg = "### ROLE_TO_ACT: EXECUTOR" + System.lineSeparator()
+                            + "Сессия была прервана пользователем, повтори последнее действие.";
+                    promptQueue.addUser(resumeMsg, java.util.List.of());
+                    appendSystem("Resume-after-stop: queued continuation prompt.");
+                }
+            }
             loop.run();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -1171,8 +1182,16 @@ javax.swing.TransferHandler defaultTH = inputArea.getTransferHandler();
     private void stopAction() {
 
         EmergencyStop.stop();
+        if (currentLoop != null) {
+            config.setResumeAfterStop(true);
+        }
 
-        processManager.killCurrentProcess();
+        Process currentScriptProcess = processManager.getCurrentScriptProcess();
+        if (currentScriptProcess != null) {
+            processManager.killProcessTree(currentScriptProcess);
+        } else {
+            processManager.killCurrentProcess();
+        }
 
         setStatus(StatusMarker.State.STOPPED);
 

@@ -257,6 +257,15 @@ public final class AutomationLoop implements Runnable {
 
         AppLogger.info("resumeFromPause: queued resume for role=" + role);
 
+
+    }
+
+    public void resumeAfterUserInput() {
+        if (!paused) return;
+        paused = false;
+        statusMarker.setState(StatusMarker.State.WORKING);
+        synchronized (pauseMonitor) { pauseMonitor.notifyAll(); }
+        AppLogger.info("resumeAfterUserInput: unpaused without extra prompt");
     }
 
 
@@ -831,9 +840,9 @@ public final class AutomationLoop implements Runnable {
                 } else if (mp == MarkerProcessResult.PAUSE) {
 
                     appendSystem("Agent paused: " + pauseMessage(events));
-
+                    paused = true;
                     statusMarker.setState(StatusMarker.State.PAUSED);
-
+                    synchronized (pauseMonitor) { pauseMonitor.notifyAll(); }
                     debug("honoring AGENT_PAUSE for role " + responseRole);
 
                     continue;

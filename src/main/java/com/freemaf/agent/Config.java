@@ -172,6 +172,7 @@ public final class Config {
         DEFAULTS.put("session.lastReviewerTitle", "");
         DEFAULTS.put("session.executorMessageCount", "0");
         DEFAULTS.put("session.ignoredHwnds", "");
+        DEFAULTS.put("session.resumeAfterStop", "false");
 
     }
 
@@ -493,6 +494,13 @@ public final class Config {
         props.setProperty("session.ignoredHwnds", sb.toString());
         persist();
     }
+
+    public boolean getResumeAfterStop() {
+        return getBoolean("session.resumeAfterStop", false);
+    }
+
+    public void setResumeAfterStop(boolean value) {
+        props.setProperty("session.resumeAfterStop", String.valueOf(value));
+        persist();
+    }
 }
-
-

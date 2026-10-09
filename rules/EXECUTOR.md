@@ -135,5 +135,30 @@
   <rule>Затратные задачи дробить на этапы.</rule>
   <rule>При получении сообщения "Скрипт остановлен по лимиту 30 минут" — проанализировать лог, разбить задачу на этапы и продолжить.</rule>
 </directive>
+<directive id="BUILD_BEFORE_REVIEW" severity="CRITICAL">
+  <principle>
+    Build/test step and the sub-agent launch marker MUST NOT be emitted in the same response.
+    The reviewer (JUDGE / CODE_REVIEWER) must never be opened on code that has not been proven to compile.
+  </principle>
+  <forbid action="emit_subagent_marker_in_same_response_as_build_or_test_command" />
+  <forbid action="emit_USER_MSG_with_READY_FOR_RESULT_REVIEW_or_READY_FOR_CODE_REVIEW_in_same_response_as_mvn_or_test_run" />
+  <require action="two_separate_responses">
+    <step order="1">
+      Generate a PS script that ONLY builds and/or runs tests
+      (for example: mvn -q test, mvn -q clean package, or the project-specific equivalent).
+      End that script with a plain USER_MSG (no READY_FOR_* token, no sub-agent marker).
+    </step>
+    <step order="2">
+      Read the returned build/test log. If exit code != 0 or any test failed — fix the code and repeat step 1.
+      Only when the build and tests are green, emit a SEPARATE response containing the READY_FOR_RESULT_REVIEW
+      (or READY_FOR_CODE_REVIEW) marker and the sub-agent marker — WITHOUT any build/test commands.
+    </step>
+  </require>
+  <rationale>
+    Reviewer safety: the code reviewer and judge are expensive and must be launched only on proven-good code.
+    Combining build/test with the review marker lets the application route to the reviewer before the build result is known,
+    so the reviewer can receive non-compiling code. Build/test is a mandatory gate BEFORE the review marker, not part of the same script.
+  </rationale>
+</directive>
 <directive id="MEMORY_MD_AND_EXECUTOR_DIRECTIVES">   <file>agent/project/MEMORY.md</file>   <rule>On every session start, read agent/project/MEMORY.md if it exists.</rule>   <rule>If the file contains the section "## EXECUTOR_DIRECTIVES", treat every entry in it as a permanent project directive.</rule>   <rule>When a new permanent directive must be recorded, act along one of three branches:</rule>   <branch condition="agent/project/MEMORY.md does not exist">Create the file containing at least the section "## EXECUTOR_DIRECTIVES", then write the directive into the section.</branch>   <branch condition="MEMORY.md exists but section is absent">Append the section "## EXECUTOR_DIRECTIVES" to the file, then write the directive into the section.</branch>   <branch condition="section already present">Append the directive to the existing section.</branch>   <rule>Directives are added to "## EXECUTOR_DIRECTIVES": (a) by an explicit user command; (b) on own initiative if the user instruction is clearly intended as a permanent project rule. When in doubt — ask the user; do not add silently.</rule>   <rule>Among directive files, the executor may modify ONLY agent/project/MEMORY.md. Files agent/rules/*.md and agent/AGENT_INSTRUCTIONS.md are protected; any PS script attempting to write to them is blocked by the DirectiveValidator.</rule> </directive> 
 </role>
